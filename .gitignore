@@ -1,0 +1,6 @@
+.idea
+*.txt
+client
+server
+cmake*
+*.pdf
