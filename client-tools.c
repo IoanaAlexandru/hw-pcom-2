@@ -12,6 +12,7 @@ void error_exit(char *msg) {
 
 void log_err(int err_no, enum service s, char *err_func) {
   char buf[50], err[30];
+  bool ex = false;
 
   if (s == UNLOCK)
     sprintf(buf, "UNLOCK> %d : ", err_no);
@@ -41,6 +42,7 @@ void log_err(int err_no, enum service s, char *err_func) {
       break;
     case ERR_CALL_FAILED: sprintf(err, MSG_CALL_FAILED, err_func);
       strcat(buf, err);
+      ex = true;
       break;
     default: strcat(err, MSG_NO_ERROR_MESSAGE);
       break;
@@ -53,6 +55,9 @@ void log_err(int err_no, enum service s, char *err_func) {
   int fd = open(log_file, O_CREAT | O_APPEND | O_WRONLY, 0755);
   write(fd, buf, strlen(buf));
   close(fd);
+
+  if (ex)
+    exit(1);
 }
 
 void log_msg(enum service s, char *msg) {
@@ -72,6 +77,23 @@ void log_msg(enum service s, char *msg) {
   int fd = open(log_file, O_CREAT | O_APPEND | O_WRONLY, 0755);
   write(fd, buf, strlen(buf));
   close(fd);
+}
+
+int parse_response(enum service s, char *buffer, int sockfd) {
+  if (strstr(buffer, CMD_QUIT) != NULL) {
+    printf(MSG_SERVER_SHUTDOWN);
+    close(sockfd);
+    exit(1);
+  } else {
+    double err_no = strtod(buffer, NULL);
+    if (err_no == 0L || err_no > 0) {  // server answer is not an error code
+      log_msg(s, buffer);
+      return 0;
+    } else {
+      log_err((int) err_no, s, "");
+      return (int) err_no;
+    }
+  }
 }
 
 int send_cmd(enum service s, char *buffer, int sockfd) {
@@ -94,19 +116,6 @@ int send_cmd(enum service s, char *buffer, int sockfd) {
     log_err(ERR_CALL_FAILED, NONE, "recv");
     return 1;
   } else {
-    if (strstr(buffer, CMD_QUIT) != NULL) {
-      printf(MSG_SERVER_SHUTDOWN);
-      close(sockfd);
-      exit(1);
-    } else {
-      double err_no = strtod(buffer, NULL);
-      if (err_no == 0L || err_no > 0) {  // server answer is not an error code
-        log_msg(s, buffer);
-        return 0;
-      } else {
-        log_err((int) err_no, s, "");
-        return (int) err_no;
-      }
-    }
+    return parse_response(s, buffer, sockfd);
   }
 }

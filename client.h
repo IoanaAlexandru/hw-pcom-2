@@ -5,6 +5,8 @@
 #ifndef TEMA2_CLIENT_H
 #define TEMA2_CLIENT_H
 
+
+// Interface messages
 #define MSG_SERVER_SHUTDOWN "Serverul s-a oprit.\n"
 #define MSG_NOT_AUTHENTICATED "Clientul nu este autentificat\n"
 #define MSG_SESSION_ALREADY_OPEN "Sesiune deja deschisă\n"
@@ -29,6 +31,7 @@
 enum service { NONE, IBANK, UNLOCK };
 void log_err(int err_no, enum service s, char *err_func);
 void log_msg(enum service s, char *msg);
+int parse_response(enum service s, char *buffer, int sockfd);
 int send_cmd(enum service s, char *buffer, int sockfd);
 
 void error_exit(char *msg);

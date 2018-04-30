@@ -20,6 +20,7 @@
 
 #define BUFLEN 256
 
+// Commands that can be used
 #define CMD_LOGIN "login"
 #define CMD_LOGOUT "logout"
 #define CMD_LISTSOLD "listsold"
@@ -27,6 +28,7 @@
 #define CMD_UNLOCK "unlock"
 #define CMD_QUIT "quit"
 
+// Error codes
 #define ERR_NOT_AUTHENTICATED (-1)
 #define ERR_SESSION_ALREADY_OPEN (-2)
 #define ERR_WRONG_PIN (-3)

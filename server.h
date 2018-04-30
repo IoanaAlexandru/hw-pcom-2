@@ -7,11 +7,15 @@
 
 #define MAX_CLIENTS 10
 
+// Interface messages
 #define MSG_WELCOME "Bine ai venit, %s %s"
 #define MSG_DISCONNECTED "Clientul a fost deconectat"
 #define MSG_TRANSFER_CONFIRMATION "Transfer %.02f către %s %s? [d/n]"
 #define MSG_TRANSFER_SUCCESSFUL "Transfer realizat cu succes"
+#define MSG_SEND_PASSWORD "Trimite parola secretă"
+#define MSG_UNLOCK_SUCCESSFUL "Client deblocat"
 
+// Sub-command
 #define YES 'd'
 
 #include <stdbool.h>
