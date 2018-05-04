@@ -1,0 +1,139 @@
+              ____   ____           _____                      ____  
+             |  _ \ / ___|         |_   _|__ _ __ ___   __ _  |___ \ 
+             | |_) | |      _____    | |/ _ \ '_ ` _ \ / _` |   __) |
+             |  __/| |___  |_____|   | |  __/ | | | | | (_| |  / __/ 
+             |_|    \____|           |_|\___|_| |_| |_|\__,_| |_____|
+                                                                     
+
+    În cele ce urmează voi face diferența clar între aplicația de tip "client" și utili-
+zatorii care folosesc aplicația, definite în cod drept "Client", respectiv "User".
+(I.e., "client" NU înseamnă niciodată client al băncii, ci se referă la procesul client).
+
+
+======================================= Overview ========================================
+
+
+    Codul este structurat în 3 fișiere header și 4 fișiere sursă astfel:
+
+- Informația comună dintre client și server (codurile de eroare și comenzile -
+interpretate în același fel atât de server cât și de client, dar și o funcție mică
+de afișare a unei erori) se găsește în fișierul 'tools.h'.
+
+- Main-ul clientului se află în 'client.c', și folosește funcții definite în 'client.h'
+și implementate în 'client-tools.c'. Interfața clientului (mesajele afișate) este în
+limba română, dar codul și serverul folosesc limba engleză, așa că am folosit macro-uri
+pentru a defini mesajele în română în fișierul header.
+
+- Main-ul serverului se află în 'server.c', și folosește funcții definite în 'server.h'
+și implementate în 'server-tools.c'. Interfața serverului (mesajele afișate) este în
+limba engleză, dar mesajele trimise la client sunt în limba română. Toate mesajele sunt
+definite prin macro-uri în fișierul header pentru flexibilitate.
+
+
+    Am considerat că dimensiunea maximă a buffer-ului este 256, iar numărul maxim de
+clienți care se pot conecta în același timp este 10.
+
+
+    Structuri folosite:
+
+- enum service: indică formatul mesajelor din log (dacă sunt precedate de IBANK>, UNLOCK>
+sau nimic - NONE)
+
+- struct User: informații generale despre utilizatori - include nume, prenume, numărul
+cardului, pin-ul, parola, soldul curent, starea (blocat/deblocat) a contului și starea
+utilizatorului (este sau nu este logat dintr-un client)
+
+- struct Database: baza de date a serverului, conținând un număr de utilizatori n, sub
+forma unui vector de pointeri la structura User
+
+- struct Client: informații despre un client conectat - include utilizatorul care este
+logat pe acel client (pointer la o informație din database, sau NULL), numărul de încer-
+cări consecutive de logare pe cardul reținut în prev_login, starea transferului (dacă
+există un transfer în curs) și informații despre un eventual transfer în desfășurare
+(destinația transferului și suma de transferat)
+
+
+    Clientul se asigură că fiecare comandă trimisă către server este validă și are argu-
+mente valide. Serverul se ocupă de interpretarea propriu-zisă a comenzii și a informați-
+ilor din baza de date (fișierul cu utilizatori). Doar comenzile valide vor fi salvate în
+fișierul de log al clientului, iar alte comenzi vor cauza doar apariția unui mesaj de
+eroare în interfața clientului.
+
+
+---------------------------------------- Client -----------------------------------------
+
+    Clientul folosește doi sockeți - UDP și TCP - pentru a transmite diferite comenzi
+către server. Deoarece comanda "quit" de la server poate apărea în orice moment (chiar
+fără ca și clientul să fi dat vreo comandă), folosesc select pentru a putea urmări
+permanent o eventuală comandă quit sau închidere bruscă a serverului.
+
+
+    Cât timp conexiunea clientului cu serverul este deschisă, clientul acceptă comenzi
+primite de la tastatură de la utilizator. Comenzile (și argumentele lor) sunt parsate
+folosind strtok și interpretate astfel:
+
+- login număr_card pin
+  Un număr prea mare sau prea mic de argumente va cauza afișarea unei erori. De asemenea,
+  număr_card trebuie să fie obligatoriu un număr format din 6 cifre, iar pin-ul trebuie
+  să fie un număr format din 4 cifre. Acest lucru este verificat de funcția de conversie
+  string-to-double strtod(), care întoarce valoarea 0L dacă conversia nu a fost realizată
+  cu succes, așadar argumentele sunt valide dacă au lungimea necesară și rezultatul con-
+  versiei este diferit de 0 (cu excepția cazului valid în care numerele sunt formate doar
+  din zerouri).
+  Dacă există deja un utilizator logat, se afișează un mesaj de eroare. Dacă comanda este
+  validă, se trimite către server.
+
+- quit
+  Clientul închide sockeții deschiși și salvează comanda în log. Serverul va ști când co-
+  nexiunea se va închide, deci procesul-client se poate închide în siguranță.
+
+- unlock
+  Clientul reține numărul de card de la ultimul apel eșuat al comenzii "login" (dacă nu
+  există un astfel de apel, sau ultima comandă login s-a efectuat cu succes, afișează un
+  mesaj de eroare) și trimite comanda către server astfel: "unlock număr_card". Dacă
+  răspunsul de la server este afirmativ (este nevoie de parolă) citește de la tastatură
+  parola (un șir de maxim 8 caractere). Dacă parola este validă, trimite către server
+  mesajul "unlock număr_card parola", altfel afișează un mesaj de eroare.
+
+- logout
+  Dacă există un utilizator logat, se trimite comanda către server, altfel se afișează
+  un mesaj de eroare.
+
+- listsold
+  Dacă există un utilizator logat, se trimite comanda către server, altfel se afișează
+  un mesaj de eroare.
+
+- transfer număr_card suma
+  Clientul verifică dacă numărul de card este valid (la fel ca la comanda login) și dacă
+  suma este un număr pozitiv mai mare ca zero.
+  Dacă există un utilizator logat și argumentele sunt valide, se trimite comanda către
+  server, altfel se afișează un mesaj de eroare.
+
+- orice altă comandă
+  Se afișează un mesaj de eroare și informații despre comenzile care pot fi folosite.
+
+
+    Comenzile login, logout, listsold, transfer și quit sunt trimise pe socket-ul TCP,
+iar comanda unlock este trimisă pe socket-ul UDP. Clientul ignoră liniile goale.
+
+    Clientul interpretează răspunsul primit de la server (care poate fi un mesaj sau un
+cod de eroare) și îl scrie cu formatul corespunzător atât în fișierul log, cât și la
+stdout. Unele erori (care nu sunt venite de la server) sunt scrise doar la stdout.
+
+---------------------------------------- Server -----------------------------------------
+
+    Serverul folosește un socket UDP și câte un socket TCP pentru fiecare client conectat
+(maxim 10) - pentru a asculta eventuale comenzi de la clienți și a trimite răspunsuri.
+Pentru a putea răspunde imediat la orice comandă de pe orice socket, și totodată să
+urmăresc și inputul de la stdin pentru o eventuală comandă quit, folosesc select().
+
+
+    Serverul își formează baza de date atunci când pornește, salvând informațiile din
+fișierul dat ca parametru într-o structură Database pe care o va actualiza permanent.
+
+    
+    În funcție de comanda primită, serverul trimite ca răspuns un mesaj sau un cod de
+eroare conform comportamentului descris în cerință, folosindu-se de baza de date și
+informațiile reținute despre fiecare client în parte.
+
+================================ ALEXANDRU Ioana | 324CB ================================

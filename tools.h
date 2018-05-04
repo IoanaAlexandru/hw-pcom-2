@@ -28,6 +28,9 @@
 #define CMD_UNLOCK "unlock"
 #define CMD_QUIT "quit"
 
+// Sub-command
+#define YES 'd'
+
 // Error codes
 #define ERR_NOT_AUTHENTICATED (-1)
 #define ERR_SESSION_ALREADY_OPEN (-2)
@@ -39,5 +42,10 @@
 #define ERR_NOT_ENOUGH_FUNDS (-8)
 #define ERR_OPERATION_CANCELLED (-9)
 #define ERR_CALL_FAILED (-10)
+
+static inline void error_exit(char *msg) {
+  perror(msg);
+  exit(1);
+}
 
 #endif //TEMA2_TOOLS_H

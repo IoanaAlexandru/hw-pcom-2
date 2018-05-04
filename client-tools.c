@@ -3,12 +3,6 @@
 //
 
 #include "client.h"
-#include "tools.h"
-
-void error_exit(char *msg) {
-  perror(msg);
-  exit(1);
-}
 
 // Write error message in logfile based on service name and error code
 // Third argument is only used for err_no == ERR_CALL_FAILED

@@ -1,10 +1,8 @@
-#include "server.h"
-#include "tools.h"
+//
+// Copyright Ioana Alexandru 2018.
+//
 
-void error_exit(char *msg) {
-perror(msg);
-exit(1);
-}
+#include "server.h"
 
 ssize_t readline(int sockd, void *vptr, size_t maxlen) {
   ssize_t n, rc;
@@ -29,7 +27,7 @@ ssize_t readline(int sockd, void *vptr, size_t maxlen) {
   return n;
 }
 
-Database *init_users(char *users_data_file) {
+Database *init_database(char *users_data_file) {
   int fd = open(users_data_file, O_RDONLY);
   if (fd < 0)
     error_exit("ERROR opening file");

@@ -6,6 +6,7 @@
 #define TEMA2_SERVER_H
 
 #include <stdbool.h>
+#include "tools.h"
 
 #define MAX_CLIENTS 10
 
@@ -20,9 +21,6 @@
 // Server interface messages
 #define MSG_NEW_CONNECTION "New connection on socket %d\n"
 #define MSG_CLOSED_CONNECTION "Connection on socket %d closed\n"
-
-// Sub-command
-#define YES 'd'
 
 typedef struct {
   char surname[13];
@@ -50,11 +48,9 @@ typedef struct {
   double transfer_sum;
 } Client;
 
-Database *init_users(char *users_data_file);
+Database *init_database(char *users_data_file);
 Client *init_client();
 int login(Database *database, char *card_no, char *pin, User **logged_user);
 int get_user(Database *database, char *card_no, User **user);
-
-void error_exit(char *msg);
 
 #endif //TEMA2_SERVER_H

@@ -3,13 +3,22 @@
 //
 
 #include "client.h"
-#include "tools.h"
 
 int main(int argc, char *argv[]) {
   if (argc < 3) {
     fprintf(stderr, "Usage: %s IP_server port_server\n", argv[0]);
     exit(0);
   }
+
+  // Setting up server address
+  struct sockaddr_in serv_addr;
+  serv_addr.sin_family = AF_INET;
+  long port_server = strtol(argv[2], NULL, 10);
+  if (port_server == 0L || port_server > INT_MAX)
+    error_exit("Invalid port!\n");
+  serv_addr.sin_port = htons((uint16_t) port_server);
+  if (inet_aton(argv[1], &serv_addr.sin_addr) != 1)
+    error_exit("Invalid IP address!\n");
 
   // Opening sockets
   int sockUDP = socket(PF_INET, SOCK_DGRAM, 0);
@@ -20,41 +29,31 @@ int main(int argc, char *argv[]) {
   if (sockTCP < 0)
     log_err(ERR_CALL_FAILED, NONE, "socket");
 
-  // Setting up server address
-  struct sockaddr_in serv_addr;
-  serv_addr.sin_family = AF_INET;
-  long port_server = strtol(argv[2], NULL, 10);
-  if (port_server == 0L || port_server > INT_MAX) {
-    close(sockTCP);
-    close(sockUDP);
-    error_exit("Invalid port!\n");
-  }
-  serv_addr.sin_port = htons((uint16_t) port_server);
-  if (inet_aton(argv[1], &serv_addr.sin_addr) != 1) {
-    close(sockTCP);
-    close(sockUDP);
-    error_exit("Invalid IP address!\n");
-  }
-
   if (connect(sockTCP, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
     log_err(ERR_CALL_FAILED, NONE, "connect");
 
   // Using select to listen for a possible "quit" command arriving on sockTCP
   fd_set read_fds, tmp_fds;
+
   FD_ZERO(&read_fds);
+  FD_ZERO(&tmp_fds);
+
   FD_SET(0, &read_fds);
   FD_SET(sockTCP, &read_fds);
 
+  // Initialising other variables
   bool logged_in = false;   // true if a user is already logged in
   char last_login[7] = "";  // saving card_no of last login attempt for unlock
   char buffer[BUFLEN], command[BUFLEN];
 
+  // Main loop
   while (1) {
     tmp_fds = read_fds;
     if (select(sockTCP + 1, &tmp_fds, NULL, NULL, NULL) == -1)
       log_err(ERR_CALL_FAILED, NONE, "select");
 
     if (FD_ISSET(sockTCP, &tmp_fds)) {
+      // Receiving command from server (QUIT)
       memset(buffer, 0, BUFLEN);
       ssize_t n = recv(sockTCP, buffer, BUFLEN, 0);
       if (n < 0) {
@@ -98,11 +97,11 @@ int main(int argc, char *argv[]) {
         } else if (logged_in) {
           log_err(ERR_SESSION_ALREADY_OPEN, IBANK, NULL);
 
-        } else if ((strtod(cmd[1], NULL) == 0 && strcmp(cmd[1], "000000") != 0)
+        } else if ((strtod(cmd[1], NULL) == 0L && strcmp(cmd[1], "000000") != 0)
             || strlen(cmd[1]) != 6) {
           printf(MSG_USAGE_CARD_NO_FORMAT);
 
-        } else if ((strtod(cmd[2], NULL) == 0 && strcmp(cmd[2], "0000") != 0)
+        } else if ((strtod(cmd[2], NULL) == 0L && strcmp(cmd[2], "0000") != 0)
             || strlen(cmd[2]) != 4) {
           printf(MSG_USAGE_PIN_FORMAT);
 
@@ -123,6 +122,15 @@ int main(int argc, char *argv[]) {
 
 
       } else if (strcmp(cmd[0], CMD_UNLOCK) == 0) {
+        if (logged_in) {
+          log_err(ERR_OPERATION_FAILED, UNLOCK, NULL);
+          continue;
+        }
+        if (strcmp(last_login, "") == 0) {
+          printf(MSG_NO_PREVIOUS_LOGIN);
+          continue;
+        }
+
         sprintf(buffer, "%s %s", CMD_UNLOCK, last_login);
         socklen_t addr_len = sizeof(serv_addr);
         sendto(sockUDP,
@@ -188,6 +196,10 @@ int main(int argc, char *argv[]) {
           double sum = strtod(cmd[2], NULL);
           if (sum == 0L || sum < 0) {
             printf(MSG_INVALID_SUM);
+
+          } else if ((strtod(cmd[1], NULL) == 0L && strcmp(cmd[1], "000000") != 0)
+              || strlen(cmd[1]) != 6) {
+            printf(MSG_USAGE_CARD_NO_FORMAT);
 
           } else {
             ans = send_cmd(IBANK, command, sockTCP, sockUDP);

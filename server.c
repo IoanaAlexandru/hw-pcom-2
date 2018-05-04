@@ -3,16 +3,14 @@
 //
 
 #include "server.h"
-#include "tools.h"
 
 int main(int argc, char *argv[]) {
-  ssize_t n;
-
   if (argc < 2) {
     fprintf(stderr, "Usage : %s port_server users_data_file\n", argv[0]);
     exit(1);
   }
 
+  // Setting up server address
   struct sockaddr_in serv_addr;
   memset((char *) &serv_addr, 0, sizeof(serv_addr));
   serv_addr.sin_family = AF_INET;
@@ -20,6 +18,7 @@ int main(int argc, char *argv[]) {
   uint16_t port_no = (uint16_t) atoi(argv[1]);
   serv_addr.sin_port = htons(port_no);
 
+  // Opening sockets
   int sockUDP = socket(PF_INET, SOCK_DGRAM, 0);
   if (sockUDP < 0)
     error_exit("ERROR opening UDP socket");
@@ -38,31 +37,33 @@ int main(int argc, char *argv[]) {
 
   listen(sockTCP, MAX_CLIENTS);
 
-  // Initialising sets of file descriptors
+  // Using select to listen for commands from clients
   fd_set read_fds;  // set of fds used by select()
   int fd_max;       // max value of fds in read_fds
   fd_set tmp_fds;   // temporary set of fds
 
-  //Initially clearing the fd sets
   FD_ZERO(&read_fds);
   FD_ZERO(&tmp_fds);
-
-  fd_max = sockTCP;
-
-  char buffer[BUFLEN];
 
   FD_SET(0, &read_fds);
   FD_SET(sockUDP, &read_fds);
   FD_SET(sockTCP, &read_fds);
-  struct sockaddr_in cli_addr;
-  socklen_t cli_len = (socklen_t) sizeof(cli_addr);
 
-  Database *database = init_users(argv[2]);
-  Client *clients[MAX_CLIENTS];
-  for (int i = 0; i < MAX_CLIENTS; i++)
+  // Reading user info from file
+  Database *database = init_database(argv[2]);
+
+  // Saving client info in an array
+  Client *clients[MAX_CLIENTS + sockTCP];
+  for (int i = 0; i < MAX_CLIENTS + sockTCP; i++)
     clients[i] = NULL;
 
-  // main loop
+  // Initialising other variables
+  struct sockaddr_in cli_addr;
+  socklen_t cli_len = (socklen_t) sizeof(cli_addr);
+  fd_max = sockTCP;
+  char buffer[BUFLEN];
+
+  // Main loop
   while (1) {
     tmp_fds = read_fds;
     if (select(fd_max + 1, &tmp_fds, NULL, NULL, NULL) == -1)
@@ -85,7 +86,7 @@ int main(int argc, char *argv[]) {
               free(database->users[j]);
             free(database->users);
             free(database);
-            for (int j = 0; j < MAX_CLIENTS; j++)
+            for (int j = 0; j < MAX_CLIENTS + sockTCP; j++)
               if (clients[j] != NULL)
                 free(clients[j]);
             for (int j = 0; j <= fd_max; j++)
@@ -94,7 +95,10 @@ int main(int argc, char *argv[]) {
           } else {
             continue;
           }
+
+
         } else if (i == sockUDP) {
+          // Receiving command on UDP socket
           if (recvfrom(sockUDP,
                        buffer,
                        BUFLEN,
@@ -115,7 +119,9 @@ int main(int argc, char *argv[]) {
               User *user;
               int res = get_user(database, cmd[1], &user);
               if (res == 0) {
-                if (in == 2) {
+                if (!user->locked) {  // account not locked
+                  sprintf(buffer, "%d", ERR_OPERATION_FAILED);
+                } else if (in == 2) {
                   sprintf(buffer, MSG_SEND_PASSWORD);
                 } else if (in == 3) {
                   if (strcmp(user->pass, cmd[2]) == 0) {
@@ -137,8 +143,10 @@ int main(int argc, char *argv[]) {
                  0,
                  (struct sockaddr *) &cli_addr,
                  cli_len);
+
+
         } else if (i == sockTCP) {
-          // new connection
+          // New connection
           int newsockfd;
           if ((newsockfd =
                    accept(sockTCP, (struct sockaddr *) &cli_addr, &cli_len))
@@ -155,23 +163,22 @@ int main(int argc, char *argv[]) {
             printf(MSG_NEW_CONNECTION, newsockfd);
           }
         } else {
-          // receiving command from client
+          // Receiving command on TCP socket
           memset(buffer, 0, BUFLEN);
+          ssize_t n;
           if ((n = recv(i, buffer, sizeof(buffer), 0)) <= 0) {
-            if (n == 0) {
-              // connection closed
+            if (n == 0)
               printf(MSG_CLOSED_CONNECTION, i);
-            } else {
+            else
               error_exit("ERROR in recv");
-            }
             close(i);
             FD_CLR(i, &read_fds); // removing socket
-            // removing previously logged user
+            // Removing previously logged user
             if (clients[i]->logged_user != NULL)
               clients[i]->logged_user->logged_in = false;
             free(clients[i]);
             clients[i] = NULL;
-          } else { // received command from user
+          } else {
             // Parsing command
             char *cmd[3];
             char *pch = strtok(buffer, " \n");
@@ -192,6 +199,7 @@ int main(int argc, char *argv[]) {
                 sprintf(buffer, "%d", ERR_OPERATION_CANCELLED);
               }
               clients[i]->transfer_in_progress = false;
+
             } else if (strcmp(cmd[0], CMD_LOGIN) == 0) {
               int res = login(database, cmd[1], cmd[2], &clients[i]->logged_user);
               if (res == 0) {

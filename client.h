@@ -6,6 +6,7 @@
 #define TEMA2_CLIENT_H
 
 #include <limits.h>
+#include "tools.h"
 
 // Interface messages
 #define MSG_SERVER_SHUTDOWN "Serverul s-a oprit.\n"
@@ -23,6 +24,7 @@
 #define MSG_INVALID_COMMAND "Comanda \"%s\" este invalidă!\n"
 #define MSG_INVALID_SUM "Sumă invalidă!\n"
 #define MSG_NO_ERROR_MESSAGE "Eroare necunoscută\n"
+#define MSG_NO_PREVIOUS_LOGIN "Nu a fost înregistrată nici o comandă de login!\n"
 
 #define MSG_USAGE_TIPS "Încercați una din comenzile: \"login\", \"logout\", \"listsold\", \"transfer\", \"unlock\" sau \"quit\".\n"
 #define MSG_USAGE_LOGIN "Utilizare: login < numar_card > < pin >\n"
@@ -37,6 +39,4 @@ void log_msg(enum service s, char *msg);
 int parse_response(enum service s, char *buffer, int sockfd, int extra_sockfd);
 int send_cmd(enum service s, char *buffer, int sockfd, int extra_sockfd);
 
-void error_exit(char *msg);
-
-#endif //TEMA2_CLIENT_Hs
+#endif //TEMA2_CLIENT_H

@@ -17,5 +17,6 @@ $(CLT):	$(CLT).c
 clean:
 	rm -f *.o *~
 	rm -f $(SRV) $(CLT)
+	rm -f *.log
 
 
