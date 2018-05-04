@@ -10,6 +10,8 @@ void error_exit(char *msg) {
   exit(1);
 }
 
+// Write error message in logfile based on service name and error code
+// Third argument is only used for err_no == ERR_CALL_FAILED
 void log_err(int err_no, enum service s, char *err_func) {
   char buf[50], err[30];
   bool ex = false;
@@ -60,6 +62,7 @@ void log_err(int err_no, enum service s, char *err_func) {
     exit(1);
 }
 
+// Write message in logfile using service name
 void log_msg(enum service s, char *msg) {
   char buf[50];
   if (s == UNLOCK) {
@@ -79,10 +82,13 @@ void log_msg(enum service s, char *msg) {
   close(fd);
 }
 
-int parse_response(enum service s, char *buffer, int sockfd) {
+// Interpret buffer message received from server
+// Sock arguments are closed in case of an error that causes the program to exit
+int parse_response(enum service s, char *buffer, int sockfd, int extra_sockfd) {
   if (strstr(buffer, CMD_QUIT) != NULL) {
     printf(MSG_SERVER_SHUTDOWN);
     close(sockfd);
+    close(extra_sockfd);
     exit(1);
   } else {
     double err_no = strtod(buffer, NULL);
@@ -96,7 +102,9 @@ int parse_response(enum service s, char *buffer, int sockfd) {
   }
 }
 
-int send_cmd(enum service s, char *buffer, int sockfd) {
+// Send command to server (on sockfd) and receive response
+// In case of an error that causes the program to quit, sockets are closed
+int send_cmd(enum service s, char *buffer, int sockfd, int extra_sockfd) {
   ssize_t n;
 
   // Logging command
@@ -115,7 +123,12 @@ int send_cmd(enum service s, char *buffer, int sockfd) {
   if (n < 0) {
     log_err(ERR_CALL_FAILED, NONE, "recv");
     return 1;
+  } else if (n == 0) {
+    printf(MSG_UNEXPECTED_SERVER_SHUTDOWN);
+    close(sockfd);
+    close(extra_sockfd);
+    exit(1);
   } else {
-    return parse_response(s, buffer, sockfd);
+    return parse_response(s, buffer, sockfd, extra_sockfd);
   }
 }

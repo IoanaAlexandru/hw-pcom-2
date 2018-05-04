@@ -63,14 +63,25 @@ Database *init_users(char *users_data_file) {
 
     users[i]->locked = false;
     users[i]->logged_in = false;
-
-//    printf("%s %s %s %s %s %lf\n", users[i]->surname, users[i]->forename,
-//            users[i]->card_no, users[i]->pin, users[i]->pass, users[i]->sold);
   }
 
   database->users = users;
   close(fd);
   return database;
+}
+
+Client *init_client() {
+  Client *client = (Client *) malloc(sizeof(Client));
+
+  client->logged_user = NULL;
+  client->login_attempts = 0;
+  strcpy(client->prev_login, "");
+
+  client->transfer_in_progress = false;
+  client->transfer_dest = NULL;
+  client->transfer_sum = 0;
+
+  return client;
 }
 
 int login(Database *database, char *card_no, char *pin, User **logged_user) {

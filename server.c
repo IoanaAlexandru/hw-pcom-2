@@ -47,25 +47,20 @@ int main(int argc, char *argv[]) {
   FD_ZERO(&read_fds);
   FD_ZERO(&tmp_fds);
 
-  FD_SET(0, &read_fds);
-  FD_SET(sockUDP, &read_fds);
-  FD_SET(sockTCP, &read_fds);
   fd_max = sockTCP;
 
   char buffer[BUFLEN];
 
+  FD_SET(0, &read_fds);
+  FD_SET(sockUDP, &read_fds);
+  FD_SET(sockTCP, &read_fds);
   struct sockaddr_in cli_addr;
   socklen_t cli_len = (socklen_t) sizeof(cli_addr);
 
-  Database *user_data = init_users(argv[2]);
-  // TODO make this V a struct client_info
-  User *logged_users[MAX_CLIENTS];
-  int login_attempts[MAX_CLIENTS];
-  char prev_login[MAX_CLIENTS][7];
-
-  bool transfer_in_progress[MAX_CLIENTS];
-  User *transfer_dest = NULL;  // TODO vector
-  double transfer_sum = 0;     // TODO vector
+  Database *database = init_users(argv[2]);
+  Client *clients[MAX_CLIENTS];
+  for (int i = 0; i < MAX_CLIENTS; i++)
+    clients[i] = NULL;
 
   // main loop
   while (1) {
@@ -80,8 +75,21 @@ int main(int argc, char *argv[]) {
           memset(buffer, 0, BUFLEN);
           fgets(buffer, BUFLEN - 1, stdin);
 
-          if (strstr(buffer, "quit") || strcmp(buffer, "q\n") == 0) {
-            // TODO free mem, close sockets (FD_CLR?)
+          if (strstr(buffer, CMD_QUIT) != NULL) {
+            sprintf(buffer, CMD_QUIT);
+            for (int j = sockTCP + 1; j <= fd_max; j++)
+              if (FD_ISSET(j, &read_fds))
+                send(j, buffer, BUFLEN, 0);
+
+            for (int j = 0; j < database->n; j++)
+              free(database->users[j]);
+            free(database->users);
+            free(database);
+            for (int j = 0; j < MAX_CLIENTS; j++)
+              if (clients[j] != NULL)
+                free(clients[j]);
+            for (int j = 0; j <= fd_max; j++)
+              FD_CLR(j, &read_fds);
             return 0;
           } else {
             continue;
@@ -93,7 +101,6 @@ int main(int argc, char *argv[]) {
                        0,
                        (struct sockaddr *) &cli_addr,
                        &cli_len) > 0) {
-
             // Parsing command
             char *cmd[3];
             char *pch = strtok(buffer, " \n");
@@ -106,7 +113,7 @@ int main(int argc, char *argv[]) {
 
             if (strcmp(cmd[0], CMD_UNLOCK) == 0) {
               User *user;
-              int res = get_user(user_data, cmd[1], &user);
+              int res = get_user(database, cmd[1], &user);
               if (res == 0) {
                 if (in == 2) {
                   sprintf(buffer, MSG_SEND_PASSWORD);
@@ -144,10 +151,8 @@ int main(int argc, char *argv[]) {
               fd_max = newsockfd;
             }
             // no user is logged in on this socket yet
-            logged_users[newsockfd] = NULL;
-            transfer_in_progress[newsockfd] = false;
-            login_attempts[newsockfd] = 0;
-            strcpy(prev_login[newsockfd], "");
+            clients[newsockfd] = init_client();
+            printf(MSG_NEW_CONNECTION, newsockfd);
           }
         } else {
           // receiving command from client
@@ -155,20 +160,17 @@ int main(int argc, char *argv[]) {
           if ((n = recv(i, buffer, sizeof(buffer), 0)) <= 0) {
             if (n == 0) {
               // connection closed
-              printf("Socket %d hung up\n", i);
+              printf(MSG_CLOSED_CONNECTION, i);
             } else {
               error_exit("ERROR in recv");
             }
             close(i);
             FD_CLR(i, &read_fds); // removing socket
             // removing previously logged user
-            if (logged_users[i] != NULL) {
-              logged_users[i]->logged_in = false;
-              logged_users[i] = NULL;
-            }
-            transfer_in_progress[i] = false;
-            login_attempts[i] = 0;
-            strcpy(prev_login[i], "");
+            if (clients[i]->logged_user != NULL)
+              clients[i]->logged_user->logged_in = false;
+            free(clients[i]);
+            clients[i] = NULL;
           } else { // received command from user
             // Parsing command
             char *cmd[3];
@@ -181,65 +183,66 @@ int main(int argc, char *argv[]) {
             }
 
             // Executing command
-            if (transfer_in_progress[i]) {
+            if (clients[i]->transfer_in_progress) {
               if (cmd[0][0] == YES) {
-                transfer_dest->sold += transfer_sum;
-                logged_users[i]->sold -= transfer_sum;
+                clients[i]->transfer_dest->sold += clients[i]->transfer_sum;
+                clients[i]->logged_user->sold -= clients[i]->transfer_sum;
                 sprintf(buffer, MSG_TRANSFER_SUCCESSFUL);
               } else {
                 sprintf(buffer, "%d", ERR_OPERATION_CANCELLED);
               }
-              transfer_in_progress[i] = false;
+              clients[i]->transfer_in_progress = false;
             } else if (strcmp(cmd[0], CMD_LOGIN) == 0) {
-              int res = login(user_data, cmd[1], cmd[2], &logged_users[i]);
+              int res = login(database, cmd[1], cmd[2], &clients[i]->logged_user);
               if (res == 0) {
                 sprintf(buffer,
                         MSG_WELCOME,
-                        logged_users[i]->surname,
-                        logged_users[i]->forename);
-                login_attempts[i] = 0;
+                        clients[i]->logged_user->surname,
+                        clients[i]->logged_user->forename);
+                clients[i]->login_attempts = 0;
               } else {
                 sprintf(buffer, "%d", res);
               }
-              if (res == ERR_WRONG_PIN && strcmp(prev_login[i], cmd[1]) == 0) {
-                login_attempts[i]++;
+              if (res == ERR_WRONG_PIN
+                  && strcmp(clients[i]->prev_login, cmd[1]) == 0) {
+                clients[i]->login_attempts++;
               } else if (res == ERR_WRONG_PIN) {
-                login_attempts[i] = 1;
-                strcpy(prev_login[i], cmd[1]);
+                clients[i]->login_attempts = 1;
+                strcpy(clients[i]->prev_login, cmd[1]);
               }
 
-              if (login_attempts[i] == 3) {
+              if (clients[i]->login_attempts == 3) {
                 User *user;
-                get_user(user_data, prev_login[i], &user);
+                get_user(database, clients[i]->prev_login, &user);
                 user->locked = true;
                 sprintf(buffer, "%d", ERR_ACCOUNT_LOCKED);
-                login_attempts[i] = 0;
-                strcpy(prev_login[i], "");
+                clients[i]->login_attempts = 0;
+                strcpy(clients[i]->prev_login, "");
               }
 
             } else if (strcmp(cmd[0], CMD_LOGOUT) == 0) {
-              logged_users[i]->logged_in = false;
-              logged_users[i] = NULL;
+              clients[i]->logged_user->logged_in = false;
+              clients[i]->logged_user = NULL;
               sprintf(buffer, MSG_DISCONNECTED);
 
             } else if (strcmp(cmd[0], CMD_LISTSOLD) == 0) {
-              sprintf(buffer, "%.02f", logged_users[i]->sold);
+              sprintf(buffer, "%.02f", clients[i]->logged_user->sold);
 
             } else if (strcmp(cmd[0], CMD_TRANSFER) == 0) {
-              transfer_sum = strtod(cmd[2], NULL);
+              clients[i]->transfer_sum = strtod(cmd[2], NULL);
 
-              int res = get_user(user_data, cmd[1], &transfer_dest);
+              int res = get_user(database, cmd[1], &clients[i]->transfer_dest);
               if (res == 0) {
-                if (logged_users[i]->sold < transfer_sum) {
+                if (clients[i]->logged_user->sold < clients[i]->transfer_sum) {
                   sprintf(buffer, "%d", ERR_NOT_ENOUGH_FUNDS);
                 } else {
                   sprintf(buffer,
                           MSG_TRANSFER_CONFIRMATION,
-                          transfer_sum,
-                          transfer_dest->surname,
-                          transfer_dest->forename);
+                          clients[i]->transfer_sum,
+                          clients[i]->transfer_dest->surname,
+                          clients[i]->transfer_dest->forename);
 
-                  transfer_in_progress[i] = true;
+                  clients[i]->transfer_in_progress = true;
                 }
               } else {
                 sprintf(buffer, "%d", res);
